@@ -1,0 +1,8 @@
+package-as: GuildKeyInvite
+
+ignore:
+  - tests
+  - tools
+  - docs
+  - releases
+  - README.md

@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: Guild Key Invite
+## Notes: Whisper a key word to the guild member running this addon and get invited to the guild automatically.
+## Author: Nekramess
+## Version: 0.1.0
+## SavedVariables: GuildKeyInviteDB
+
+GuildKeyInvite.lua
