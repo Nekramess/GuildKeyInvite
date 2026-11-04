@@ -3,6 +3,12 @@
 ## Notes: Whisper a key word to the guild member running this addon and get invited to the guild automatically.
 ## Author: Nekramess
 ## Version: 0.1.0
+## IconTexture: Interface\Icons\INV_Misc_GroupNeedMore
 ## SavedVariables: GuildKeyInviteDB
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 
 GuildKeyInvite.lua

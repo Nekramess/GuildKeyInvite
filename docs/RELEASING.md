@@ -7,6 +7,10 @@ Release file name standard: `GuildKeyInvite-v<Version>-forever.zip`, for example
 - Exactly one zip is stored in `releases/`. Download from `https://github.com/Nekramess/GuildKeyInvite/raw/main/releases/GuildKeyInvite-v0.1.0-forever.zip` once the PR is merged.
 - One version, one file: bump `## Version` for every release, and never upload different contents under a version that is already on CurseForge.
 
+## Libraries
+
+The minimap button uses LibDBIcon-1.0 (v56), embedded in `GuildKeyInvite/Libs/` with LibStub, CallbackHandler-1.0 and LibDataBroker-1.1, and listed first in the `.toc`. Copies came from public GitHub (LibDataBroker from tekkub/libdatabroker-1-1, the rest from Questie, 4 Nov 2026). Never hand-build a minimap button.
+
 ## Steps
 
 1. Branch off `main` (never commit to `main`), change the code, bump `## Version` once per release.
