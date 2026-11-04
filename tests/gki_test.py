@@ -57,6 +57,8 @@ function CreateFrame()
     function f:RegisterEvent(e) self.events[e] = true end
     function f:UnregisterEvent(e) self.events[e] = nil end
     function f:SetScript(n, fn) self.scripts[n] = fn end
+    function f:EnableKeyboard(v) self.keyboard = v and true or false end
+    function f:SetPropagateKeyboardInput(v) self.propagate = v and true or false end
     frames[#frames + 1] = f
     return f
 end
@@ -68,6 +70,12 @@ C_GuildInfo = {Invite = function(name)
     invited[#invited + 1] = name
 end}
 SlashCmdList = {}
+UIParent = {}
+WorldFrame = {hooks = {}}
+function WorldFrame:HookScript(name, fn)
+    self.hooks[name] = self.hooks[name] or {}
+    table.insert(self.hooks[name], fn)
+end
 
 sent, registered, refreshes = {}, {}, {}
 C_ChatInfo = {SendChatMessage = function(msg, chatType, lang, target)
@@ -94,6 +102,15 @@ function Fire(event, ...)
     if f.events[event] then f.scripts.OnEvent(f, event, ...) end
 end
 function Whisper(text, sender) Fire("CHAT_MSG_WHISPER", text, sender or "Tester-Realm") end
+function Press()
+    local f = frames[2]
+    if f and f.keyboard and f.scripts.OnKeyDown then f.scripts.OnKeyDown(f, "A") end
+end
+function Click()
+    for _, fn in ipairs(WorldFrame.hooks.OnMouseDown or {}) do fn(WorldFrame, "LeftButton") end
+end
+-- A whisper followed, 2 s later, by a key press (the way an invite really goes out).
+function Ask(text, sender) Whisper(text, sender); now = now + 2; Press() end
 function Slash(msg) SlashCmdList["GUILDKEYINVITE"](msg) end
 function InvitedList() return table.concat(invited, "|") end
 function Printed() return table.concat(printed, "\n") end
@@ -115,9 +132,14 @@ class Results:
             print("FAIL", name)
 
 
-def new_env(lua_path, saved=None, setup=None):
+def new_env(lua_path, saved=None, setup=None, on=True):
     lua = lupa.LuaRuntime()
     lua.execute(MOCK)
+    if on:
+        if saved is None:
+            saved = "{enabled = true}"
+        elif "enabled" not in saved:
+            saved = saved.replace("{", "{enabled = true, ", 1)
     if saved is not None:
         lua.execute("GuildKeyInviteDB = " + saved)  # saved is a Lua table literal
     if setup:
@@ -152,112 +174,112 @@ def run(lua_path=LUA_PATH):
 
     # --- matching -------------------------------------------------------
     lua = new_env(lua_path)
-    ok, err = safe(lua, 'Whisper("!ginvite", "Alice-Realm")')
+    ok, err = safe(lua, 'Ask("!ginvite", "Alice-Realm")')
     r.check("plain key invites the sender", ok and invited(lua) == "Alice-Realm")
 
     for i, text in enumerate(["!Ginvite", "  !GINVITE  ", "!ginvite!!", "ginvite", "!ginvite."]):
         lua = new_env(lua_path)
-        safe(lua, f'Whisper("{text}", "P{i}")')
+        safe(lua, f'Ask("{text}", "P{i}")')
         r.check(f"normalized match: {text!r}", invited(lua) == f"P{i}")
 
     for text in ["hello", "invite", "!invite", "please !ginvite me", "!ginvit", "", "   ", "!ginvite me"]:
         lua = new_env(lua_path)
-        safe(lua, f'Whisper("{text}", "Bob")')
+        safe(lua, f'Ask("{text}", "Bob")')
         r.check(f"non-matching whisper ignored: {text!r}", invited(lua) == "")
 
     # --- on / off -------------------------------------------------------
     lua = new_env(lua_path)
     safe(lua, 'Slash("off")')
-    safe(lua, 'Whisper("!ginvite", "Carol")')
+    safe(lua, 'Ask("!ginvite", "Carol")')
     r.check("/gki off stops invites", invited(lua) == "")
     safe(lua, 'Slash("on")')
-    safe(lua, 'Whisper("!ginvite", "Carol")')
+    safe(lua, 'Ask("!ginvite", "Carol")')
     r.check("/gki on resumes invites", invited(lua) == "Carol")
 
     lua = new_env(lua_path, saved="{enabled = false}")
-    safe(lua, 'Whisper("!ginvite", "Dave")')
+    safe(lua, 'Ask("!ginvite", "Dave")')
     r.check("saved enabled=false is kept across loads", invited(lua) == "")
 
     # --- custom keys ----------------------------------------------------
     lua = new_env(lua_path)
     safe(lua, 'Slash("key inv join")')
-    safe(lua, 'Whisper("join", "Eve")')
-    safe(lua, 'Whisper("INV", "Frank")')
-    safe(lua, 'Whisper("!ginvite", "Grace")')
+    safe(lua, 'Ask("join", "Eve")')
+    safe(lua, 'Ask("INV", "Frank")')
+    safe(lua, 'Ask("!ginvite", "Grace")')
     r.check("custom keys: join and inv work, old default dropped", invited(lua) == "Eve|Frank")
     safe(lua, 'Slash("key")')
     r.check("/gki key with no word keeps the old keys",
             "usage" in printed(lua) and invited(lua) == "Eve|Frank")
-    safe(lua, 'Whisper("join", "Heidi")')
+    safe(lua, 'Ask("join", "Heidi")')
     r.check("keys still work after empty /gki key", invited(lua).endswith("Heidi"))
 
     lua = new_env(lua_path, saved='{keys = {"recruit"}}')
-    safe(lua, 'Whisper("recruit", "Ivan")')
-    safe(lua, 'Whisper("!ginvite", "Judy")')
+    safe(lua, 'Ask("recruit", "Ivan")')
+    safe(lua, 'Ask("!ginvite", "Judy")')
     r.check("saved keys are used and not overwritten by defaults", invited(lua) == "Ivan")
 
     # --- cooldown -------------------------------------------------------
     lua = new_env(lua_path)
-    safe(lua, 'Whisper("!ginvite", "Kim")')
-    safe(lua, 'now = now + 10; Whisper("!ginvite", "Kim")')
+    safe(lua, 'Ask("!ginvite", "Kim")')
+    safe(lua, 'now = now + 10; Ask("!ginvite", "Kim")')
     r.check("same sender inside cooldown is ignored", invited(lua) == "Kim")
-    safe(lua, 'Whisper("!ginvite", "kim")')
+    safe(lua, 'Ask("!ginvite", "kim")')
     r.check("cooldown is case-insensitive on the name", invited(lua) == "Kim")
-    safe(lua, 'Whisper("!ginvite", "Leo")')
+    safe(lua, 'Ask("!ginvite", "Leo")')
     r.check("different sender is not blocked by someone else's cooldown", invited(lua) == "Kim|Leo")
-    safe(lua, 'now = now + 25; Whisper("!ginvite", "Kim")')
+    safe(lua, 'now = now + 25; Ask("!ginvite", "Kim")')
     r.check("same sender allowed again after cooldown", invited(lua) == "Kim|Leo|Kim")
-    safe(lua, 'Slash("cooldown 0"); Whisper("!ginvite", "Mia"); Whisper("!ginvite", "Mia")')
+    safe(lua, 'Slash("cooldown 0"); Ask("!ginvite", "Mia"); Ask("!ginvite", "Mia")')
     r.check("/gki cooldown 0 allows repeats", invited(lua).endswith("Mia|Mia"))
     safe(lua, 'Slash("cooldown abc")')
     r.check("bad cooldown value is rejected with usage", "usage" in printed(lua))
 
     # --- secret values (chat lockdown) ----------------------------------
     lua = new_env(lua_path)
-    ok1, e1 = safe(lua, 'Whisper(Secret(), "Nora")')
-    ok2, e2 = safe(lua, 'Whisper("!ginvite", Secret())')
-    ok3, e3 = safe(lua, 'Whisper(Secret(), Secret())')
+    ok1, e1 = safe(lua, 'Ask(Secret(), "Nora")')
+    ok2, e2 = safe(lua, 'Ask("!ginvite", Secret())')
+    ok3, e3 = safe(lua, 'Ask(Secret(), Secret())')
     r.check("secret text or sender does not error", ok1 and ok2 and ok3)
     r.check("secret text or sender does not invite", invited(lua) == "")
-    safe(lua, 'Whisper("!ginvite", "Oscar")')
+    safe(lua, 'Ask("!ginvite", "Oscar")')
     r.check("normal whispers still work after secret ones", invited(lua) == "Oscar")
 
     # --- guild / permission checks --------------------------------------
     lua = new_env(lua_path)
-    safe(lua, 'inGuild = false; Whisper("!ginvite", "Pat"); Whisper("!ginvite", "Quinn")')
+    safe(lua, 'inGuild = false; Ask("!ginvite", "Pat"); Ask("!ginvite", "Quinn")')
     r.check("no invite when not in a guild", invited(lua) == "")
     r.check("not-in-guild warning printed once", printed(lua).count("not in a guild") == 1)
 
     lua = new_env(lua_path)
-    safe(lua, 'canInvite = false; Whisper("!ginvite", "Rita"); Whisper("!ginvite", "Sam")')
+    safe(lua, 'canInvite = false; Ask("!ginvite", "Rita"); Ask("!ginvite", "Sam")')
     r.check("no invite when rank can't invite", invited(lua) == "")
     r.check("permission warning printed once", printed(lua).count("rank can't invite") == 1)
 
     lua = new_env(lua_path)
-    safe(lua, 'CanGuildInvite = nil; Whisper("!ginvite", "Tina")')
+    safe(lua, 'CanGuildInvite = nil; Ask("!ginvite", "Tina")')
     r.check("still invites when CanGuildInvite does not exist", invited(lua) == "Tina")
 
     # --- failures and fallbacks -----------------------------------------
     lua = new_env(lua_path)
-    ok, err = safe(lua, 'inviteError = "boom"; Whisper("!ginvite", "Uma")')
+    ok, err = safe(lua, 'inviteError = "boom"; Ask("!ginvite", "Uma")')
     r.check("a failing Invite call does not raise", ok)
     r.check("a failing Invite call is reported", "could not invite Uma" in printed(lua))
-    safe(lua, 'inviteError = nil; now = now + 31; Whisper("!ginvite", "Uma")')
+    safe(lua, 'inviteError = nil; now = now + 31; Ask("!ginvite", "Uma")')
     r.check("addon keeps working after a failed invite", invited(lua) == "Uma")
 
     lua = new_env(lua_path, setup='GuildInvite = function(n) invited[#invited + 1] = "old:" .. n end; C_GuildInfo = nil')
-    safe(lua, 'Whisper("!ginvite", "Vic")')
+    safe(lua, 'Ask("!ginvite", "Vic")')
     r.check("falls back to GuildInvite when C_GuildInfo is missing", invited(lua) == "old:Vic")
 
     lua = new_env(lua_path, setup="C_GuildInfo = nil")
-    ok, err = safe(lua, 'Whisper("!ginvite", "Wes")')
+    ok, err = safe(lua, 'Ask("!ginvite", "Wes")')
     r.check("no invite function at all: no error, message printed",
             ok and "no guild invite function" in printed(lua))
 
     # --- loading / saved variables --------------------------------------
-    lua = new_env(lua_path)
+    lua = new_env(lua_path, on=False)
     db = lua.eval("GuildKeyInviteDB")
-    r.check("defaults are created on first load", db["enabled"] is True and db["cooldown"] == 30 and db["keys"][1] == "!ginvite")
+    r.check("defaults are created on first load", db["enabled"] is False and db["cooldown"] == 30 and db["keys"][1] == "!ginvite")
 
     lua2 = lupa.LuaRuntime()
     lua2.execute(MOCK)
@@ -266,7 +288,7 @@ def run(lua_path=LUA_PATH):
     chunk("GuildKeyInvite")
     lua2.execute('Fire("ADDON_LOADED", "OtherAddon")')
     r.check("saved variable not created for another addon's ADDON_LOADED", lua2.eval("GuildKeyInviteDB") is None)
-    ok, _ = safe(lua2, 'Whisper("!ginvite", "Xena")')
+    ok, _ = safe(lua2, 'Ask("!ginvite", "Xena")')
     r.check("whisper before our ADDON_LOADED does not error or invite", ok and invited(lua2) == "")
 
     lua = new_env(lua_path)
@@ -286,47 +308,47 @@ def run(lua_path=LUA_PATH):
     r.check("/gki test never invites", invited(lua) == "")
     safe(lua, 'printed = {}; Slash("bogus")')
     r.check("unknown subcommand prints help", "/gki on | off" in printed(lua))
-    safe(lua, 'Whisper("!ginvite", "Yan")')
+    safe(lua, 'Ask("!ginvite", "Yan")')
     safe(lua, 'printed = {}; Slash("status")')
     r.check("status lists who was invited this session", "Yan" in printed(lua))
 
     # --- reply -----------------------------------------------------------
     lua = new_env(lua_path)
-    safe(lua, 'Whisper("!ginvite", "Zed-Realm")')
+    safe(lua, 'Ask("!ginvite", "Zed-Realm")')
     r.check("no reply is sent by default", str(lua.eval("SentList()")) == "")
 
     safe(lua, 'Slash("reply Welcome! Check Discord")')
-    safe(lua, 'now = now + 31; Whisper("!ginvite", "Zed-Realm")')
+    safe(lua, 'now = now + 31; Ask("!ginvite", "Zed-Realm")')
     r.check("reply is whispered to the sender after an invite",
             str(lua.eval("SentList()")) == "WHISPER:Zed-Realm:Welcome! Check Discord")
-    safe(lua, 'Whisper("!ginvite", "Zed-Realm")')
+    safe(lua, 'Ask("!ginvite", "Zed-Realm")')
     r.check("no second reply inside the cooldown", str(lua.eval("SentList()")).count("|") == 0)
     safe(lua, 'printed = {}; Slash("reply")')
     r.check("/gki reply with no text shows the current reply", "Welcome! Check Discord" in printed(lua))
-    safe(lua, 'Slash("reply off"); now = now + 31; Whisper("!ginvite", "Zed-Realm")')
+    safe(lua, 'Slash("reply off"); now = now + 31; Ask("!ginvite", "Zed-Realm")')
     r.check("/gki reply off stops replies", str(lua.eval("SentList()")).count("|") == 0)
 
     lua = new_env(lua_path, saved='{reply = "Hi!"}')
-    safe(lua, 'Whisper("!ginvite", "Amy")')
+    safe(lua, 'Ask("!ginvite", "Amy")')
     r.check("saved reply is used", str(lua.eval("SentList()")) == "WHISPER:Amy:Hi!")
 
     lua = new_env(lua_path, saved='{reply = "Hi!"}')
-    safe(lua, 'inviteError = "boom"; Whisper("!ginvite", "Ben")')
+    safe(lua, 'inviteError = "boom"; Ask("!ginvite", "Ben")')
     r.check("no reply when the invite itself failed", str(lua.eval("SentList()")) == "")
 
     lua = new_env(lua_path, saved='{reply = "Hi!"}')
-    ok, _ = safe(lua, 'sendError = "nope"; Whisper("!ginvite", "Cat")')
+    ok, _ = safe(lua, 'sendError = "nope"; Ask("!ginvite", "Cat")')
     r.check("a failing reply does not raise and the invite still happened", ok and invited(lua) == "Cat")
     r.check("a failing reply is reported", "could not send the reply to Cat" in printed(lua))
 
     lua = new_env(lua_path, saved='{reply = "Hi!"}',
                   setup="C_ChatInfo = nil; function SendChatMessage(msg, chatType, lang, target) "
                         "sent[#sent + 1] = 'old:' .. target .. ':' .. msg end")
-    safe(lua, 'Whisper("!ginvite", "Dan")')
+    safe(lua, 'Ask("!ginvite", "Dan")')
     r.check("falls back to SendChatMessage when C_ChatInfo is missing", str(lua.eval("SentList()")) == "old:Dan:Hi!")
 
     lua = new_env(lua_path, saved='{reply = "Hi!"}')
-    safe(lua, 'Whisper(Secret(), "Eli")')
+    safe(lua, 'Ask(Secret(), "Eli")')
     r.check("no reply for a secret whisper", str(lua.eval("SentList()")) == "")
 
     # --- minimap button (LibDBIcon) ---------------------------------------
@@ -372,8 +394,98 @@ def run(lua_path=LUA_PATH):
     lua = new_env(lua_path, setup="LibStub = nil")
     ok, _ = safe(lua, 'Slash("minimap off")')
     r.check("works without the libraries: no error from minimap command", ok)
-    safe(lua, 'Whisper("!ginvite", "Fay")')
+    safe(lua, 'Ask("!ginvite", "Fay")')
     r.check("works without the libraries: invites still go out", invited(lua) == "Fay")
+
+    # --- OFF by default ---------------------------------------------------
+    lua = new_env(lua_path, on=False)
+    r.check("addon starts OFF on a fresh install", bool(lua.eval("GuildKeyInviteDB.enabled == false")))
+    safe(lua, 'Ask("!ginvite", "Pia")')
+    r.check("nothing is invited while it is OFF", invited(lua) == "")
+    safe(lua, 'printed = {}; Slash("")')
+    r.check("nothing is queued while it is OFF", "waiting for" not in printed(lua))
+    safe(lua, 'Slash("on"); Ask("!ginvite", "Pia")')
+    r.check("after /gki on it invites", invited(lua) == "Pia")
+
+    lua = new_env(lua_path, on=False)
+    safe(lua, 'Fire("PLAYER_LOGIN")')
+    r.check("first login shows a hint that it is OFF", "OFF" in printed(lua) and "/gki on" in printed(lua))
+    safe(lua, 'printed = {}; Fire("PLAYER_LOGIN")')
+    r.check("the OFF hint is shown only once", printed(lua) == "")
+    lua = new_env(lua_path, saved="{introShown = true}", on=False)
+    safe(lua, 'Fire("PLAYER_LOGIN")')
+    r.check("no hint when it was already shown in an earlier session", printed(lua) == "")
+    lua = new_env(lua_path)
+    safe(lua, 'Fire("PLAYER_LOGIN")')
+    r.check("no hint when it is already ON", printed(lua) == "")
+
+    # --- guild invites need a real key press or click ---------------------
+    lua = new_env(lua_path)
+    r.check("key events are propagated so every key keeps working", bool(lua.eval("frames[2].propagate == true")))
+    r.check("world clicks are hooked", bool(lua.eval("#WorldFrame.hooks.OnMouseDown == 1")))
+    r.check("keyboard listening is off while nothing waits", bool(lua.eval("frames[2].keyboard == false")))
+    safe(lua, 'Whisper("!ginvite", "Ann-Realm")')
+    r.check("a whisper alone does not call Invite", invited(lua) == "")
+    r.check("the request is announced", "asked for a guild invite" in printed(lua))
+    r.check("keyboard listening is on while a request waits", bool(lua.eval("frames[2].keyboard == true")))
+    safe(lua, "now = now + 2; Press()")
+    r.check("a key press sends the queued invite", invited(lua) == "Ann-Realm")
+    safe(lua, "now = now + 2; Press()")
+    r.check("a second key press does nothing", invited(lua) == "Ann-Realm")
+    r.check("keyboard listening is off again once nothing waits", bool(lua.eval("frames[2].keyboard == false")))
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "Bo"); now = now + 2; Click()')
+    r.check("a world click sends the queued invite", invited(lua) == "Bo")
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "A1"); Whisper("!ginvite", "B1")')
+    safe(lua, "now = now + 2; Press(); Press()")
+    r.check("one invite per key press", invited(lua) == "A1")
+    safe(lua, "now = now + 1; Press()")
+    r.check("invites are at least 1.5 s apart", invited(lua) == "A1")
+    safe(lua, "now = now + 1; Press()")
+    r.check("the next request goes out once the spacing has passed", invited(lua) == "A1|B1")
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "Old"); now = now + 601; Press()')
+    r.check("a request older than 10 minutes is dropped", invited(lua) == "")
+    safe(lua, 'now = now + 1; Whisper("!ginvite", "Fresh"); now = now + 2; Press()')
+    r.check("a fresh request after an expired one still works", invited(lua) == "Fresh")
+
+    lua = new_env(lua_path)
+    safe(lua, 'Slash("cooldown 0"); Whisper("!ginvite", "Dup"); Whisper("!ginvite", "dup")')
+    safe(lua, "now = now + 2; Press(); now = now + 2; Press()")
+    r.check("the same person waiting twice is queued once", invited(lua) == "Dup")
+
+    lua = new_env(lua_path)
+    safe(lua, 'for i = 1, 25 do Whisper("!ginvite", "P" .. i) end')
+    safe(lua, "for i = 1, 30 do now = now + 2; Press() end")
+    r.check("at most 20 requests wait; the oldest are dropped",
+            invited(lua).split("|") == [f"P{i}" for i in range(6, 26)])
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "Zoe"); Slash("off"); Slash("on"); now = now + 2; Press()')
+    r.check("turning it off drops waiting requests", invited(lua) == "")
+    safe(lua, 'Whisper("!ginvite", "Yul"); registered["GuildKeyInvite"].obj.OnClick(nil, "LeftButton"); '
+              'registered["GuildKeyInvite"].obj.OnClick(nil, "LeftButton"); now = now + 2; Press()')
+    r.check("turning it off with the minimap button drops waiting requests", invited(lua) == "")
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "Bad"); Whisper("!ginvite", "Good"); inviteError = "boom"; now = now + 2; Press()')
+    r.check("a failed invite is reported", "could not invite Bad" in printed(lua))
+    safe(lua, 'inviteError = nil; now = now + 2; Press()')
+    r.check("the next waiting request still goes out after a failure", invited(lua) == "Good")
+
+    lua = new_env(lua_path, saved='{reply = "Hi!"}')
+    safe(lua, 'Whisper("!ginvite", "Rex")')
+    r.check("reply is not sent before the invite goes out", str(lua.eval("SentList()")) == "")
+    safe(lua, "now = now + 2; Press()")
+    r.check("reply goes out together with the invite", str(lua.eval("SentList()")) == "WHISPER:Rex:Hi!")
+
+    lua = new_env(lua_path)
+    safe(lua, 'Whisper("!ginvite", "Sky"); printed = {}; Slash("")')
+    r.check("status shows how many invites are waiting", "waiting for a key press or click: 1" in printed(lua))
 
     # --- Forever docs (only when the Forever UI source is present) ------
     guild_docs = os.path.join(FOREVER_DOCS, "GuildInfoDocumentation.lua")

@@ -5,4 +5,5 @@ ignore:
   - tools
   - docs
   - releases
+  - curseforge
   - README.md
