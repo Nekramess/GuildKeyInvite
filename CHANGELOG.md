@@ -9,6 +9,7 @@
 - 30 second cooldown per person (`/gki cooldown <seconds>`).
 - Minimap button through LibDBIcon-1.0: left-click on/off, right-click status, drag to move, `/gki minimap on|off`.
 - `/gki test <text>` shows whether a message would match, without inviting anyone.
+- If the game blocks a call, the addon says which function it was and no longer reports that invite as sent.
 - Whispers are ignored while the game hides chat text from addons (encounters, challenge modes, PvP matches, dungeons and raids).
 
 Not yet tested in the live Forever client (simulated client only).

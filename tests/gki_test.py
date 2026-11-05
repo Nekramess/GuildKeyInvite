@@ -487,6 +487,55 @@ def run(lua_path=LUA_PATH):
     safe(lua, 'Whisper("!ginvite", "Sky"); printed = {}; Slash("")')
     r.check("status shows how many invites are waiting", "waiting for a key press or click: 1" in printed(lua))
 
+    # --- calls the game blocks ---------------------------------------------
+    lua = new_env(lua_path)
+    r.check("listens for ADDON_ACTION_BLOCKED and ADDON_ACTION_FORBIDDEN",
+            bool(lua.eval("frames[1].events.ADDON_ACTION_BLOCKED and frames[1].events.ADDON_ACTION_FORBIDDEN")))
+
+    BLOCK_INVITE = ('C_GuildInfo.Invite = function(name) '
+                    'Fire("ADDON_ACTION_FORBIDDEN", "GuildKeyInvite", "GuildInvite()") end')
+    lua = new_env(lua_path, saved='{reply = "Hi!"}')
+    safe(lua, BLOCK_INVITE)
+    safe(lua, 'Ask("!ginvite", "Blk")')
+    r.check("a blocked invite is not reported as invited", "invited Blk" not in printed(lua))
+    r.check("a blocked invite is reported as blocked, with the function name",
+            "could not invite Blk: blocked by the game (GuildInvite())" in printed(lua))
+    r.check("the blocked function name is printed for the player", "the game blocked GuildInvite()" in printed(lua))
+    r.check("no reply is sent after a blocked invite", str(lua.eval("SentList()")) == "")
+    safe(lua, 'printed = {}; Slash("")')
+    r.check("a blocked invite is not listed as invited this session", "Blk" not in printed(lua))
+
+    lua = new_env(lua_path)
+    safe(lua, BLOCK_INVITE)
+    safe(lua, 'Slash("cooldown 0"); Ask("!ginvite", "B1"); Ask("!ginvite", "B2")')
+    r.check("the blocked function name is announced only once", printed(lua).count("the game blocked GuildInvite()") == 1)
+    r.check("every blocked invite still gets its own failure line",
+            "could not invite B1" in printed(lua) and "could not invite B2" in printed(lua))
+
+    lua = new_env(lua_path)
+    safe(lua, 'Fire("ADDON_ACTION_BLOCKED", "OtherAddon", "Foo()")')
+    r.check("another addon's blocked action is ignored", "the game blocked" not in printed(lua))
+    safe(lua, 'C_GuildInfo.Invite = function(n) invited[#invited + 1] = n; '
+              'Fire("ADDON_ACTION_BLOCKED", "OtherAddon", "Foo()") end')
+    safe(lua, 'Ask("!ginvite", "Ok1")')
+    r.check("another addon's blocked action during an invite does not fail it",
+            invited(lua) == "Ok1" and "invited Ok1." in printed(lua))
+
+    lua = new_env(lua_path)
+    safe(lua, 'Fire("ADDON_ACTION_FORBIDDEN", "GuildKeyInvite", "Old()")')
+    safe(lua, 'Ask("!ginvite", "Ok2")')
+    r.check("an earlier block does not make a later invite fail",
+            invited(lua) == "Ok2" and "invited Ok2." in printed(lua))
+
+    lua = new_env(lua_path, saved='{reply = "Hi!"}')
+    safe(lua, 'C_ChatInfo.SendChatMessage = function() '
+              'Fire("ADDON_ACTION_BLOCKED", "GuildKeyInvite", "SendChatMessage()") end')
+    safe(lua, 'Ask("!ginvite", "Ok3")')
+    r.check("a blocked reply is reported with the function name",
+            "could not send the reply to Ok3: blocked by the game (SendChatMessage())" in printed(lua))
+    r.check("the invite still counts when only the reply is blocked",
+            invited(lua) == "Ok3" and "invited Ok3." in printed(lua))
+
     # --- Forever docs (only when the Forever UI source is present) ------
     guild_docs = os.path.join(FOREVER_DOCS, "GuildInfoDocumentation.lua")
     chat_docs = os.path.join(FOREVER_DOCS, "ChatInfoDocumentation.lua")

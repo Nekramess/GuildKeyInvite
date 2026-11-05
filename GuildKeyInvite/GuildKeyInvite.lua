@@ -98,19 +98,44 @@ local function SetEnabled(value)
     if not db.enabled then ClearPending() end
 end
 
+-- The game reports a blocked call with ADDON_ACTION_BLOCKED / ADDON_ACTION_FORBIDDEN
+-- (a synchronous event) and the call returns normally, so pcall alone says "success".
+-- HandleBlocked below records the function name while the call runs.
+local blockedFunction
+local reportedBlocked = {}
+
+local function Guarded(fn, ...)
+    blockedFunction = nil
+    local ok, err = pcall(fn, ...)
+    if ok and blockedFunction then
+        return false, "blocked by the game (" .. blockedFunction .. ")"
+    end
+    return ok, err
+end
+
+local function HandleBlocked(a, b)
+    if a ~= ADDON_NAME and b ~= ADDON_NAME then return end -- another addon's block
+    local fn = tostring((a == ADDON_NAME) and b or a)
+    blockedFunction = fn
+    if not reportedBlocked[fn] then
+        reportedBlocked[fn] = true
+        Print("the game blocked " .. fn .. ". Click Ignore on the popup and tell the author this name.")
+    end
+end
+
 local function DoInvite(name)
     local invite = (C_GuildInfo and C_GuildInfo.Invite) or GuildInvite
     if not invite then
         return false, "no guild invite function found"
     end
-    return pcall(invite, name)
+    return Guarded(invite, name)
 end
 
 local function SendReply(sender)
     if type(db.reply) ~= "string" or db.reply == "" then return end
     local send = (C_ChatInfo and C_ChatInfo.SendChatMessage) or SendChatMessage
     if not send then return end
-    local ok, err = pcall(send, db.reply, "WHISPER", nil, sender)
+    local ok, err = Guarded(send, db.reply, "WHISPER", nil, sender)
     if not ok then
         Print("could not send the reply to " .. sender .. ": " .. tostring(err))
     end
@@ -329,8 +354,12 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("CHAT_MSG_WHISPER")
+pcall(frame.RegisterEvent, frame, "ADDON_ACTION_BLOCKED")
+pcall(frame.RegisterEvent, frame, "ADDON_ACTION_FORBIDDEN")
 frame:SetScript("OnEvent", function(_, event, ...)
-    if event == "ADDON_LOADED" then
+    if event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        HandleBlocked(...)
+    elseif event == "ADDON_LOADED" then
         if (...) == ADDON_NAME then
             GuildKeyInviteDB = GuildKeyInviteDB or {}
             db = GuildKeyInviteDB

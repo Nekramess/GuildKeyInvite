@@ -30,6 +30,7 @@ Minimap button (LibDBIcon): left-click turns auto invite on/off, right-click sho
 - **The invite is sent on your next key press or click in the game world.** Other Forever addons report that guild invites only work from a real key press or click, so a whisper queues the invite and the input sends it (one per press, at least 1.5 s apart, requests expire after 10 minutes, at most 20 waiting). Turning the addon off drops waiting requests.
 - You need to be in a guild and your rank needs permission to invite.
 - Whispers are skipped while the game hides chat text from addons (encounters, challenge modes, PvP matches, dungeons and raids).
+- If the game blocks an action (the "blocked from an action only available to the Blizzard UI" popup), the addon prints which function was blocked and does not report that invite as sent.
 - Settings are saved per account in `GuildKeyInviteDB`.
 
 ## CurseForge
@@ -38,4 +39,4 @@ Listing text, upload fields and changelog: [`curseforge/LISTING.md`](curseforge/
 
 ## Tests
 
-`pip install lupa`, then `python3 tests/gki_test.py` (114 checks) and `python3 tests/mutation_check.py` (42 deliberate breaks, all caught). Simulated client only; not yet tested in the live Forever client.
+`pip install lupa`, then `python3 tests/gki_test.py` (127 checks) and `python3 tests/mutation_check.py` (48 deliberate breaks, all caught). Simulated client only; not yet tested in the live Forever client.
